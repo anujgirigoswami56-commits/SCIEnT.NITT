@@ -37,10 +37,16 @@ const teamMemberSchema = new mongoose.Schema({
       "Project Management",
       "DevOps",
       "Corporate Communications",
+      "Corporate Communication",
       "Creatives",
       null
     ],
     default: null
+  },
+
+  isMock: {
+    type: Boolean,
+    default: false
   },
 
   Department: {

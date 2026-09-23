@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Edit, Trash2, Search, LogOut, Users, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { MOCK_TEAM_MEMBERS } from '../../members/data/mockTeamMembers';
 
 const TeamDashboard = () => {
   const [members, setMembers] = useState([]);
@@ -11,6 +12,7 @@ const TeamDashboard = () => {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [subteamFilter, setSubteamFilter] = useState('');
+  const [yearFilter, setYearFilter] = useState('');
   
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState(null);
@@ -24,10 +26,18 @@ const TeamDashboard = () => {
     try {
       setLoading(true);
       const response = await axios.get(`${API_BASE}/api/team/all`);
-      setMembers(response.data.data || []);
+      let data = response.data.data || [];
+      if (data.length === 0 && process.env.NODE_ENV === 'development') {
+        data = MOCK_TEAM_MEMBERS;
+      }
+      setMembers(data);
     } catch (error) {
-      toast.error('Failed to fetch team members');
-      console.error(error);
+      if (process.env.NODE_ENV === 'development') {
+        setMembers(MOCK_TEAM_MEMBERS);
+      } else {
+        toast.error('Failed to fetch team members');
+        console.error(error);
+      }
     } finally {
       setLoading(false);
     }
@@ -61,23 +71,46 @@ const TeamDashboard = () => {
     }
   };
 
-  const roles = [
-    'Faculty Advisor', 'Core', 'Ex-Core', 'Senior Manager', 'Manager', 'Deputy Manager', 
-    'Senior Project Manager', 'Project Manager',
-    'Admin Executive', 'Technical Executive', 'Facility Executive', 
-    'External Affairs Executive', 'Internal Affairs Executive', 
-    'Project Operations Executive'
+  // ─── Filter constants (shown in search/filter dropdowns only) ────────────────
+  const FILTER_ROLES = [
+    'Senior Manager',
+    'Manager',
+    'Deputy Manager',
+    'Campus Affairs Executive',
+    'Faculty Executive',
+    'Technical Executive',
+    'Project Operations Executive',
+    'Faculty Advisor',
+    'Admin Executive',
   ];
 
-  const subteams = [
-    'Cores', 'Ex-Cores', 'Project Management', 'DevOps', 'Corporate Communications', 'Creatives'
+  const FILTER_SUBTEAMS = [
+    'Core',
+    'Project Management',
+    'DevOps',
+    'Corporate Communications',
+    'Creatives',
   ];
 
+  const SCIENT_YEARS = ['26-27', '25-26', '24-25'];
+
+  // ─── Filter logic ─────────────────────────────────────────────────────────────
   const filteredMembers = members.filter(member => {
-    const matchesSearch = member.name.toLowerCase().includes(search.toLowerCase());
-    const matchesRole = roleFilter ? member.role === roleFilter : true;
-    const matchesSubteam = subteamFilter ? member.subteam === subteamFilter : true;
-    return matchesSearch && matchesRole && matchesSubteam;
+    const searchLower = search.toLowerCase();
+    const matchesSearch =
+      member.name.toLowerCase().includes(searchLower) ||
+      (member.role || '').toLowerCase().includes(searchLower) ||
+      (member.subteam || '').toLowerCase().includes(searchLower) ||
+      (member.email || '').toLowerCase().includes(searchLower);
+    const matchesRole    = roleFilter    ? member.role    === roleFilter    : true;
+    // Sub-team filter: 'Core' matches members whose subteam is 'Core' or 'Cores'
+    const matchesSubteam = subteamFilter
+      ? (subteamFilter === 'Core'
+          ? (member.subteam === 'Core' || member.subteam === 'Cores')
+          : member.subteam === subteamFilter)
+      : true;
+    const matchesYear    = yearFilter    ? member.year    === yearFilter    : true;
+    return matchesSearch && matchesRole && matchesSubteam && matchesYear;
   });
 
   return (
@@ -146,32 +179,57 @@ const TeamDashboard = () => {
       <div className="max-w-7xl mx-auto">
         {/* Filters */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 mb-6 flex flex-col md:flex-row gap-4">
+          {/* Name / text search */}
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-500 w-5 h-5" />
             <input
               type="text"
-              placeholder="Search by name..."
+              placeholder="Search by name, role, email…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-zinc-950 border border-zinc-700 rounded-lg focus:outline-none focus:border-yellow-400 text-white"
             />
           </div>
-          <select 
-            value={roleFilter} 
+
+          {/* Year filter */}
+          <select
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            className="w-full md:w-40 px-4 py-2 bg-zinc-950 border border-zinc-700 rounded-lg focus:outline-none focus:border-yellow-400 text-white"
+          >
+            <option value="">All Years</option>
+            {SCIENT_YEARS.map(y => <option key={y} value={y}>Team of {y}</option>)}
+          </select>
+
+          {/* Role filter */}
+          <select
+            value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            className="w-full md:w-48 px-4 py-2 bg-zinc-950 border border-zinc-700 rounded-lg focus:outline-none focus:border-yellow-400 text-white"
+            className="w-full md:w-52 px-4 py-2 bg-zinc-950 border border-zinc-700 rounded-lg focus:outline-none focus:border-yellow-400 text-white"
           >
             <option value="">All Roles</option>
-            {roles.map(r => <option key={r} value={r}>{r}</option>)}
+            {FILTER_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
-          <select 
-            value={subteamFilter} 
+
+          {/* Sub-team filter */}
+          <select
+            value={subteamFilter}
             onChange={(e) => setSubteamFilter(e.target.value)}
-            className="w-full md:w-48 px-4 py-2 bg-zinc-950 border border-zinc-700 rounded-lg focus:outline-none focus:border-yellow-400 text-white"
+            className="w-full md:w-52 px-4 py-2 bg-zinc-950 border border-zinc-700 rounded-lg focus:outline-none focus:border-yellow-400 text-white"
           >
-            <option value="">All Subteams</option>
-            {subteams.map(s => <option key={s} value={s}>{s}</option>)}
+            <option value="">All Sub-teams</option>
+            {FILTER_SUBTEAMS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+
+          {/* Clear all filters */}
+          {(search || roleFilter || subteamFilter || yearFilter) && (
+            <button
+              onClick={() => { setSearch(''); setRoleFilter(''); setSubteamFilter(''); setYearFilter(''); }}
+              className="shrink-0 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 rounded-lg text-sm font-medium transition-colors"
+            >
+              Clear Filters
+            </button>
+          )}
         </div>
 
         {/* Content */}
@@ -247,6 +305,11 @@ const TeamDashboard = () => {
                     )}
                   </div>
                   {member.email && <p className="text-zinc-500 text-sm mt-auto truncate">{member.email}</p>}
+                  {member.year && (
+                    <span className="mt-2 inline-block px-2 py-0.5 bg-zinc-800 text-zinc-400 text-xs rounded border border-zinc-700 font-mono">
+                      Team {member.year}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
