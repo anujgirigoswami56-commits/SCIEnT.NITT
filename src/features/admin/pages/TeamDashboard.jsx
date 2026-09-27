@@ -4,7 +4,6 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Edit, Trash2, Search, LogOut, Users, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { MOCK_TEAM_MEMBERS } from '../../members/data/mockTeamMembers';
 
 const TeamDashboard = () => {
   const [members, setMembers] = useState([]);
@@ -26,18 +25,11 @@ const TeamDashboard = () => {
     try {
       setLoading(true);
       const response = await axios.get(`${API_BASE}/api/team/all`);
-      let data = response.data.data || [];
-      if (data.length === 0 && process.env.NODE_ENV === 'development') {
-        data = MOCK_TEAM_MEMBERS;
-      }
+      const data = response.data.data || [];
       setMembers(data);
     } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        setMembers(MOCK_TEAM_MEMBERS);
-      } else {
-        toast.error('Failed to fetch team members');
-        console.error(error);
-      }
+      toast.error('Failed to fetch team members from database');
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -73,19 +65,25 @@ const TeamDashboard = () => {
 
   // ─── Filter constants (shown in search/filter dropdowns only) ────────────────
   const FILTER_ROLES = [
+    'Faculty Advisor',
+    'Core',
+    'Ex-Core',
     'Senior Manager',
     'Manager',
     'Deputy Manager',
-    'Campus Affairs Executive',
-    'Faculty Executive',
-    'Technical Executive',
-    'Project Operations Executive',
-    'Faculty Advisor',
+    'Ex-Manager',
+    'Senior Project Manager',
+    'Project Manager',
     'Admin Executive',
+    'Technical Executive',
+    'Facility Executive',
+    'External Affairs Executive',
+    'Internal Affairs Executive',
+    'Project Operations Executive',
   ];
 
   const FILTER_SUBTEAMS = [
-    'Core',
+    'Cores',
     'Project Management',
     'DevOps',
     'Corporate Communications',
@@ -98,18 +96,15 @@ const TeamDashboard = () => {
   const filteredMembers = members.filter(member => {
     const searchLower = search.toLowerCase();
     const matchesSearch =
-      member.name.toLowerCase().includes(searchLower) ||
+      (member.name || '').toLowerCase().includes(searchLower) ||
       (member.role || '').toLowerCase().includes(searchLower) ||
       (member.subteam || '').toLowerCase().includes(searchLower) ||
       (member.email || '').toLowerCase().includes(searchLower);
     const matchesRole    = roleFilter    ? member.role    === roleFilter    : true;
-    // Sub-team filter: 'Core' matches members whose subteam is 'Core' or 'Cores'
-    const matchesSubteam = subteamFilter
-      ? (subteamFilter === 'Core'
-          ? (member.subteam === 'Core' || member.subteam === 'Cores')
-          : member.subteam === subteamFilter)
+    const matchesSubteam = subteamFilter ? member.subteam === subteamFilter : true;
+    const matchesYear    = yearFilter
+      ? (yearFilter === 'none' ? !member.year : member.year === yearFilter)
       : true;
-    const matchesYear    = yearFilter    ? member.year    === yearFilter    : true;
     return matchesSearch && matchesRole && matchesSubteam && matchesYear;
   });
 
@@ -199,6 +194,7 @@ const TeamDashboard = () => {
           >
             <option value="">All Years</option>
             {SCIENT_YEARS.map(y => <option key={y} value={y}>Team of {y}</option>)}
+            <option value="none">Faculty / Admin</option>
           </select>
 
           {/* Role filter */}

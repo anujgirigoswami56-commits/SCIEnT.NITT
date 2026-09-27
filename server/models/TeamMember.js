@@ -33,12 +33,11 @@ const teamMemberSchema = new mongoose.Schema({
     type: String,
     enum: [
       "Cores",
-      "Ex-Cores",
-      "Project Management",
-      "DevOps",
       "Corporate Communications",
-      "Corporate Communication",
+      "DevOps",
       "Creatives",
+      "Project Management",
+      "Ex-Cores",
       null
     ],
     default: null
@@ -76,6 +75,7 @@ const teamMemberSchema = new mongoose.Schema({
 
   year: {
     type: String,
+    enum: ["24-25", "25-26", "26-27", null],
     default: null
   },
 
@@ -102,6 +102,9 @@ const teamMemberSchema = new mongoose.Schema({
 
 // Index for faster filtering by role or subteam
 teamMemberSchema.index({ role: 1, subteam: 1 });
+
+// Compound index for filtering and sorting by year, subteam, and order
+teamMemberSchema.index({ year: 1, subteam: 1, order: 1 });
 
 const TeamMember = mongoose.model("TeamMember", teamMemberSchema);
 

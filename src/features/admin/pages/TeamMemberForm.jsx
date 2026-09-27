@@ -11,30 +11,39 @@ import HexagonColorPicker from '../../../components/HexagonColorPicker';
 const SCIENT_YEARS = ['26-27', '25-26', '24-25'];
 
 // ── Roles per sub-team (used when adding/editing a member) ──────────────────
+// NOTE: These must exactly match the enum values in server/models/TeamMember.js
 const ROLES_BY_SUBTEAM = {
-  Core: [
-    'Campus Affairs Executive',
-    'Faculty Executive',
+  Cores: [
+    'External Affairs Executive',
+    'Internal Affairs Executive',
     'Technical Executive',
+    'Facility Executive',
     'Project Operations Executive',
+    'Core',
+    'Ex-Core',
   ],
   'Project Management': [
+    'Senior Project Manager',
+    'Project Manager',
     'Senior Manager',
   ],
   'Corporate Communications': [
     'Senior Manager',
     'Manager',
     'Deputy Manager',
+    'Ex-Manager',
   ],
   DevOps: [
     'Senior Manager',
     'Manager',
     'Deputy Manager',
+    'Ex-Manager',
   ],
   Creatives: [
     'Senior Manager',
     'Manager',
     'Deputy Manager',
+    'Ex-Manager',
   ],
 };
 
@@ -43,17 +52,24 @@ const ALL_ADD_ROLES = [
   'Senior Manager',
   'Manager',
   'Deputy Manager',
-  'Campus Affairs Executive',
-  'Faculty Executive',
+  'Senior Project Manager',
+  'Project Manager',
+  'External Affairs Executive',
+  'Internal Affairs Executive',
   'Technical Executive',
+  'Facility Executive',
   'Project Operations Executive',
   'Faculty Advisor',
   'Admin Executive',
+  'Core',
+  'Ex-Core',
+  'Ex-Manager',
 ];
 
 // Sub-team options for the add/edit form
+// NOTE: These must exactly match the enum values in server/models/TeamMember.js
 const ADD_SUBTEAMS = [
-  'Core',
+  'Cores',
   'Project Management',
   'DevOps',
   'Corporate Communications',
@@ -176,7 +192,12 @@ const TeamMemberForm = () => {
       const data = new FormData();
       data.append('image', imageFile); // field name must match multer's .single('image')
 
-      const response = await axios.post(`${API_BASE}/api/team/upload-image`, data, {
+      const qParams = [];
+      if (formData.year) qParams.push(`year=${encodeURIComponent(formData.year)}`);
+      if (id) qParams.push(`memberId=${encodeURIComponent(id)}`);
+      const qs = qParams.length ? `?${qParams.join('&')}` : '';
+
+      const response = await axios.post(`${API_BASE}/api/team/upload-image${qs}`, data, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data',
@@ -184,11 +205,11 @@ const TeamMemberForm = () => {
       });
 
       if (response.data.success) {
-        const cloudUrl = response.data.data.url;
-        setFormData(prev => ({ ...prev, photoUrl: cloudUrl }));
-        setImagePreview(cloudUrl); // now preview shows the Cloudinary URL
-        setImageFile(null);        // clear the local file — it's already uploaded
-        toast.success('Image uploaded to Cloudinary successfully!');
+        const firebaseUrl = response.data.data.url;
+        setFormData(prev => ({ ...prev, photoUrl: firebaseUrl }));
+        setImagePreview(firebaseUrl); // now preview shows the Firebase Storage URL
+        setImageFile(null);           // clear the local file — it's already uploaded
+        toast.success('Image uploaded to Firebase Storage successfully!');
       }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Image upload failed');
@@ -214,17 +235,50 @@ const TeamMemberForm = () => {
       return;
     }
 
-    // Warn if a file was selected but not uploaded yet
+    let finalPhotoUrl = formData.photoUrl;
+    // Auto-upload image to Firebase if a new file is selected
     if (imageFile) {
-      toast.warning('You selected an image but did not upload it. Upload the image first, or clear the selection.');
-      return;
+      setUploading(true);
+      try {
+        const uploadFormData = new FormData();
+        uploadFormData.append('image', imageFile);
+
+        const qParams = [];
+        if (formData.year) qParams.push(`year=${encodeURIComponent(formData.year)}`);
+        if (id) qParams.push(`memberId=${encodeURIComponent(id)}`);
+        const qs = qParams.length ? `?${qParams.join('&')}` : '';
+
+        const uploadRes = await axios.post(`${API_BASE}/api/team/upload-image${qs}`, uploadFormData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+
+        if (uploadRes.data.success && uploadRes.data.data?.url) {
+          finalPhotoUrl = uploadRes.data.data.url;
+          setFormData(prev => ({ ...prev, photoUrl: finalPhotoUrl }));
+          setImagePreview(finalPhotoUrl);
+          setImageFile(null);
+        } else {
+          toast.error('Image upload to Firebase failed');
+          setUploading(false);
+          return;
+        }
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to upload image to Firebase Storage');
+        setUploading(false);
+        return;
+      } finally {
+        setUploading(false);
+      }
     }
 
     setSaving(true);
     try {
-      const payload = { ...formData };
+      const payload = { ...formData, photoUrl: finalPhotoUrl || null };
       if (payload.subteam === '') payload.subteam = null;
-      if (payload.order !== '') payload.order = Number(payload.order);
+      if (payload.order !== '') payload.order = Number(payload.order) || 0;
       if (payload.year === '') payload.year = null;
 
       const config = { headers: { Authorization: `Bearer ${token}` } };
@@ -239,7 +293,14 @@ const TeamMemberForm = () => {
 
       navigate('/admin/team');
     } catch (error) {
-      toast.error(error.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'add'} member`);
+      const errMsg =
+        error.response?.data?.message ||
+        (typeof error.response?.data === 'string' ? error.response.data : null) ||
+        `Failed to ${isEditMode ? 'update' : 'add'} member`;
+      toast.error(errMsg);
+      if (error.response?.status === 401 || (typeof errMsg === 'string' && errMsg.toLowerCase().includes('token'))) {
+        toast.info('Session expired or invalid. Please log in again.');
+      }
     } finally {
       setSaving(false);
     }

@@ -1,44 +1,67 @@
 // config/db.js
+const dns = require('dns');
 const mongoose = require('mongoose');
-const dotenv = require("dotenv");
+const dotenv = require('dotenv');
 
-dotenv.config({ path: __dirname + "/../.env" });
+// Use public DNS to reliably resolve MongoDB Atlas SRV records
+// (fixes querySrv ECONNREFUSED on campus/mobile networks)
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+} catch (e) {
+  // Fall back to default DNS if setServers is restricted
+}
+
+dotenv.config({ path: __dirname + '/../.env' });
 
 const connectDB = async () => {
-  const isProduction = process.env.NODE_ENV === 'production' || process.env.ENV_MODE === 'production';
+  const atlasUri   = process.env.MONGO_URI_ATLAS || process.env.MONGO_URI;
+  const localUri   = process.env.MONGO_URI_LOCAL  || 'mongodb://localhost:27017/scient';
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  const localUri = process.env.MONGO_URI_LOCAL || process.env.MONGO_URI_DEV || "mongodb://localhost:27017/scient";
-  const atlasUri = process.env.MONGO_URI_ATLAS || process.env.MONGO_URI_PROD || process.env.MONGO_URI || "mongodb://localhost:27017/scient";
+  // ─── Primary target ───────────────────────────────────────────────────────
+  // Always prefer Atlas when MONGO_URI_ATLAS (or MONGO_URI) is set.
+  // Fall back to local only when neither Atlas variable is configured.
+  const primaryUri   = atlasUri  || localUri;
+  const primaryLabel = atlasUri  ? 'MongoDB Atlas' : 'Local MongoDB';
+  const fallbackUri  = atlasUri  ? localUri : null;   // fallback only when primary is Atlas
+  const fallbackLabel = 'Local MongoDB (fallback)';
 
-  const targetUri = isProduction ? atlasUri : localUri;
-  const envName = isProduction ? "Production (Atlas)" : "Development (Local)";
+  console.log(`Environment mode: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Connecting to ${primaryLabel}...`);
 
-  console.log(`Environment mode: ${isProduction ? 'production' : 'development'}`);
-  console.log(`Connecting to ${envName} MongoDB...`);
-
+  // ─── Primary connection ────────────────────────────────────────────────────
   try {
-    await mongoose.connect(targetUri, { serverSelectionTimeoutMS: 3000 });
-    console.log(`MongoDB connected successfully to ${envName}`);
-  } catch (err) {
-    console.warn(`Primary connection to ${envName} (${targetUri}) failed:`, err.message);
-
-    // If development mode and local connection failed, fallback to Atlas so dev server doesn't crash
-    if (!isProduction && atlasUri && atlasUri !== localUri) {
-      console.log("⚡ Local MongoDB not active. Attempting fallback to MongoDB Atlas...");
-      try {
-        await mongoose.connect(atlasUri, { serverSelectionTimeoutMS: 5000 });
-        console.log("✅ Successfully connected to MongoDB Atlas (fallback mode)!");
-        return;
-      } catch (fallbackErr) {
-        console.error("❌ Atlas fallback failed:", fallbackErr.message);
-      }
-    }
-
-    console.error("Please start local MongoDB (mongod / Docker) or check your connection string.");
-    process.exit(1);
+    await mongoose.connect(primaryUri, {
+      serverSelectionTimeoutMS: 15000,
+    });
+    console.log(`✅ Connected to ${primaryLabel}`);
+    return;
+  } catch (primaryErr) {
+    console.warn(`❌ ${primaryLabel} connection failed:`, primaryErr.message);
   }
+
+  // ─── Fallback connection (local) ───────────────────────────────────────────
+  if (fallbackUri) {
+    console.log(`⚡ Attempting fallback to ${fallbackLabel}...`);
+    try {
+      await mongoose.connect(fallbackUri, {
+        serverSelectionTimeoutMS: 5000,
+      });
+      console.log(`✅ Connected to ${fallbackLabel}`);
+      return;
+    } catch (fallbackErr) {
+      console.warn(`❌ ${fallbackLabel} connection failed:`, fallbackErr.message);
+    }
+  }
+
+  // ─── Both failed ───────────────────────────────────────────────────────────
+  console.error(
+    '\nCould not connect to any MongoDB instance.\n' +
+    '  1. Check that MONGO_URI_ATLAS in server/.env is correct.\n' +
+    '  2. Verify your IP is whitelisted in MongoDB Atlas Network Access.\n' +
+    '  3. Or start a local mongod instance.\n'
+  );
+  process.exit(1);
 };
 
 module.exports = connectDB;
-
-

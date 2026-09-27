@@ -3,10 +3,12 @@ const router = express.Router();
 const multer = require('multer');
 const teamController = require('../controllers/teamController');
 const { protect, adminOnly } = require('../middleware/auth');
-const { teamStorage } = require('../config/cloudConfig');
+// Note: Cloudinary teamStorage is kept for reference but team-member uploads
+// now go through Firebase Storage (memoryStorage → teamController).
+// Cloudinary remains active for clubs/projects via other routes.
 
-// Multer instance using Cloudinary's Team_Members storage
-const uploadTeamImage = multer({ storage: teamStorage });
+// memoryStorage: file buffer is available as req.file.buffer for Firebase upload
+const uploadTeamImage = multer({ storage: multer.memoryStorage() });
 
 let seedTeams;
 try {

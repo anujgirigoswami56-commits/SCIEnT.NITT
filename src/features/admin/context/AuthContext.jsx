@@ -15,8 +15,11 @@ export const AuthProvider = ({ children }) => {
     const validateToken = async () => {
       if (token) {
         if (token === 'dev-mock-admin-token-scient') {
-          setAdmin({ id: 'dev-admin-id', username: 'admin', role: 'admin' });
-          setIsAuthenticated(true);
+          // Invalidate legacy dev-mock token and force fresh real authentication
+          localStorage.removeItem('adminToken');
+          setToken(null);
+          setAdmin(null);
+          setIsAuthenticated(false);
           setLoading(false);
           return;
         }

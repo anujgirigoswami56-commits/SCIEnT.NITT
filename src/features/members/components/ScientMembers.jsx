@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Rocket, ChevronDown } from 'lucide-react';
+import { Rocket, ChevronDown, AlertTriangle } from 'lucide-react';
 import MemberCard from './MemberCard';
 import FacultyAdvisorCard from './FacultyAdvisor.jsx';
 import FacilityAdminCard from './FacilityAdmin.jsx';
@@ -9,29 +9,17 @@ import '../styles/ScientMembers.css';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const SCIENT_YEARS = ['26-27', '25-26', '24-25'];
+const SCIENT_YEARS = ['24-25', '25-26', '26-27'];
 
-const DEPARTMENTS = ['Core', 'Corporate Communications', 'DevOps', 'Creatives', 'Project Management'];
+const CATEGORIES = [
+  { id: 'Core', label: 'Core' },
+  { id: 'Corporate Communications', label: 'Corporate Communications (CC)' },
+  { id: 'DevOps', label: 'DevOps' },
+  { id: 'Creatives', label: 'Creatives' },
+  { id: 'Project Management', label: 'Project Management' },
+];
 
-// Roles per department when a specific dept is selected.
-// Core is a flat list (no roles). Project Management: Senior Managers only.
-// For all others: Senior Managers (= Senior Manager + Project Manager roles), Managers, Deputy Managers.
-const DEPT_ROLES = {
-  'Core':                    null, // flat grid, no role sections
-  'Corporate Communications': ['Senior Manager', 'Manager', 'Deputy Manager'],
-  'DevOps':                   ['Senior Manager', 'Manager', 'Deputy Manager'],
-  'Creatives':                ['Senior Manager', 'Manager', 'Deputy Manager'],
-  'Project Management':       ['Senior Manager'],
-};
-
-// In the complete-team view (no dept selected), these 4 sections are shown:
-//   "Core"            → subteam === 'Core' (flat)
-//   "Senior Managers" → role === 'Senior Manager' OR role === 'Project Manager'  (all non-Core depts)
-//   "Managers"        → role === 'Manager'        (all non-Core depts)
-//   "Deputy Managers" → role === 'Deputy Manager' (all non-Core depts)
-const COMPLETE_SECTIONS = ['Core', 'Senior Managers', 'Managers', 'Deputy Managers'];
-
-// ─── Static fallback Admin cards ─────────────────────────────────────────────
+// ─── Static fallback Admin details ───────────────────────────────────────────
 
 const dummyBakthavatsalam = {
   _id: 'advisor-baktha',
@@ -42,6 +30,7 @@ const dummyBakthavatsalam = {
   email: 'baktha@nitt.edu',
   description: 'Guiding research, innovation, and strategic initiatives at SCIEnT',
   linkedin: 'https://www.linkedin.com/company/scientnitt/',
+  cardColor: '#facc15',
 };
 
 const dummySivanesan = {
@@ -53,33 +42,33 @@ const dummySivanesan = {
   email: 'sivaneshan@nitt.edu',
   description: 'Overseeing facility management and operational excellence at SCIEnT',
   linkedin: 'https://www.linkedin.com/company/scientnitt/',
+  cardColor: '#facc15',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Normalise subteam label (DB may store singular form)
-const normSubteam = s =>
-  s === 'Corporate Communication' ? 'Corporate Communications' : s;
+// Normalise subteam label (DB may store singular form or 'Cores')
+const normSubteam = s => {
+  if (!s) return '';
+  if (s === 'Corporate Communication') return 'Corporate Communications';
+  if (s === 'Cores') return 'Core';
+  return s;
+};
 
 // Is this member in the Core subteam?
 const isCoreMember = m =>
-  m.subteam === 'Core' || m.subteam === 'Cores' || m.role === 'Core';
+  m.subteam === 'Core' ||
+  m.subteam === 'Cores' ||
+  m.role === 'Core' ||
+  (m.subteam === null && m.role?.endsWith('Executive') && m.role !== 'Admin Executive');
 
-// Filter members for a specific year + dept + role(s).
-// roles is an array; if null → return all members of that dept (flat Core).
-const getMembers = (all, year, dept, roles) =>
+// Filter Core members for a specific year
+const getCoreMembers = (all, year) =>
   all
-    .filter(m => {
-      if (m.year !== year) return false;
-      if (dept === 'Core') return isCoreMember(m);
-      if (normSubteam(m.subteam) !== dept) return false;
-      if (roles === null) return true;
-      return roles.includes(m.role);
-    })
+    .filter(m => m.year === year && isCoreMember(m))
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
-// For "Senior Managers" section in complete view:
-// includes role === 'Senior Manager' OR role === 'Project Manager' across all non-Core depts.
+// Filter Senior Managers across all depts (includes Project Managers)
 const getSeniorManagersAll = (all, year) =>
   all
     .filter(m => {
@@ -89,13 +78,13 @@ const getSeniorManagersAll = (all, year) =>
     })
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
-// For "Managers" / "Deputy Managers" in complete view (all non-Core depts).
+// Filter by role across all non-Core depts
 const getRoleAll = (all, year, role) =>
   all
     .filter(m => m.year === year && !isCoreMember(m) && m.role === role)
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
-// For dept view: Senior Managers section = Senior Manager + Project Manager roles
+// Filter Senior Managers for a specific department
 const getSeniorManagersDept = (all, year, dept) =>
   all
     .filter(m => {
@@ -105,7 +94,7 @@ const getSeniorManagersDept = (all, year, dept) =>
     })
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
-// For dept view: Managers / Deputy Managers
+// Filter by specific role in a specific department
 const getRoleDept = (all, year, dept, role) =>
   all
     .filter(m => m.year === year && normSubteam(m.subteam) === dept && m.role === role)
@@ -133,16 +122,17 @@ const RoleSection = ({ title, members }) => {
   );
 };
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 const SCIentMembers = () => {
-  // 26-27 selected by default; no department selected by default
+  // 26-27 selected initially; no category selected initially
   const [selectedYear, setSelectedYear] = useState('26-27');
   const [selectedDept, setSelectedDept] = useState(null); // null = show complete team
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const yearDropdownRef = useRef(null);
-  const [allMembers,   setAllMembers]   = useState([]);
-  const [loading,      setLoading]      = useState(true);
+  const [allMembers, setAllMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState(null);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -156,25 +146,38 @@ const SCIentMembers = () => {
   }, []);
 
   const API_BASE =
-    process.env.NODE_ENV === 'development'
+    process.env.REACT_APP_API_URL ||
+    (process.env.NODE_ENV === 'development'
       ? 'http://localhost:5000/api/team'
-      : '/api/team';
+      : '/api/team');
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchMembers = async () => {
       try {
         setLoading(true);
-        const res = await axios.get(`${API_BASE}/all`);
-        let fetched = res.data.data || [];
-        if (fetched.length === 0 && process.env.NODE_ENV !== 'production') {
-          fetched = MOCK_TEAM_MEMBERS;
+        setApiError(null);
+        let res;
+        try {
+          res = await axios.get(`${API_BASE}/all`, { timeout: 6000 });
+        } catch (firstErr) {
+          // If port 5000 or relative endpoint failed, try the alternate endpoint
+          const altEndpoint = API_BASE.includes('localhost:5000')
+            ? '/api/team/all'
+            : 'http://localhost:5000/api/team/all';
+          res = await axios.get(altEndpoint, { timeout: 6000 });
         }
-        setAllMembers(fetched);
-      } catch {
-        if (process.env.NODE_ENV !== 'production') {
+        const fetched = res.data.data || [];
+        if (fetched.length > 0) {
+          setAllMembers(fetched);
+          setApiError(null);
+        } else {
           setAllMembers(MOCK_TEAM_MEMBERS);
         }
+      } catch (err) {
+        console.error('Failed to fetch team members from API:', err);
+        setApiError('Unable to reach server. Displaying cached member directory.');
+        setAllMembers(MOCK_TEAM_MEMBERS);
       } finally {
         setLoading(false);
       }
@@ -183,29 +186,40 @@ const SCIentMembers = () => {
   }, [API_BASE]);
 
   // ── Admin cards ────────────────────────────────────────────────────────────
-  const dbAdvisors = allMembers.filter(m => m.role === 'Faculty Advisor');
-  const dbAdmin    = allMembers.find(m => m.role === 'Admin Executive');
+  const bakthaFromDb = allMembers.find(
+    m => m.role === 'Faculty Advisor' && m.name && m.name.includes('Bakthavatsalam')
+  );
+  const bakthaData = bakthaFromDb
+    ? { ...dummyBakthavatsalam, ...bakthaFromDb, photoUrl: bakthaFromDb.photoUrl || dummyBakthavatsalam.photoUrl }
+    : dummyBakthavatsalam;
 
-  let facultyAdvisors = [...dbAdvisors];
-  if (!facultyAdvisors.some(a => a.name.includes('Bakthavatsalam')))
-    facultyAdvisors.unshift(dummyBakthavatsalam);
-  if (!facultyAdvisors.some(a => a.name.includes('Prince')))
-    facultyAdvisors.push(MOCK_PRINCE_ADVISOR);
+  const sivaFromDb = allMembers.find(
+    m => (m.role === 'Admin Executive' || (m.name && m.name.includes('Sivanesan')))
+  );
+  const facilityAdmin = sivaFromDb
+    ? { ...dummySivanesan, ...sivaFromDb, photoUrl: sivaFromDb.photoUrl || dummySivanesan.photoUrl }
+    : dummySivanesan;
 
-  const facilityAdmin = dbAdmin || dummySivanesan;
+  const princeFromDb = allMembers.find(
+    m => m.role === 'Faculty Advisor' && m.name && m.name.includes('Prince')
+  );
+  const princeData = princeFromDb
+    ? { ...MOCK_PRINCE_ADVISOR, ...princeFromDb, photoUrl: princeFromDb.photoUrl || MOCK_PRINCE_ADVISOR.photoUrl }
+    : MOCK_PRINCE_ADVISOR;
+
+  const facultyAdvisors = [bakthaData, princeData];
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleYearClick = year => {
     setSelectedYear(year);
-    // keep selectedDept as-is so the user's department filter persists across years
   };
 
   const handleDeptClick = dept => {
-    // clicking the already-selected dept deselects it (returns to complete view)
+    // clicking the already-selected category deselects it (returns to complete team view)
     setSelectedDept(prev => (prev === dept ? null : dept));
   };
 
-  // ── Loading ────────────────────────────────────────────────────────────────
+  // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -214,7 +228,7 @@ const SCIentMembers = () => {
     );
   }
 
-  // ── Derived data for current view ──────────────────────────────────────────
+  // ── Derived view state ─────────────────────────────────────────────────────
   const showCompleteTeam = selectedDept === null;
 
   return (
@@ -223,7 +237,10 @@ const SCIentMembers = () => {
       {/* Ambient background glow */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute w-96 h-96 bg-[#facc15]/10 rounded-full blur-3xl -top-48 -left-48 animate-pulse" />
-        <div className="absolute w-96 h-96 bg-[#facc15]/10 rounded-full blur-3xl -bottom-48 -right-48 animate-pulse" style={{ animationDelay: '1s' }} />
+        <div
+          className="absolute w-96 h-96 bg-[#facc15]/10 rounded-full blur-3xl -bottom-48 -right-48 animate-pulse"
+          style={{ animationDelay: '1s' }}
+        />
       </div>
 
       {/* ══ Hero ══════════════════════════════════════════════════════════════ */}
@@ -242,21 +259,38 @@ const SCIentMembers = () => {
         </p>
       </div>
 
+      {/* API Error Banner if any */}
+      {apiError && (
+        <div className="max-w-2xl mx-auto mb-8 px-4">
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <span>{apiError} (Showing cached preview)</span>
+          </div>
+        </div>
+      )}
+
       {/* ══ SCIEnT Admin (always visible) ════════════════════════════════════ */}
       <div className="AdminSection mb-16 px-4">
         <div className="flex justify-center mb-6">
           <h2 className="text-3xl md:text-4xl font-black text-[#facc15]">SCIEnT Admin</h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto items-stretch">
-          {facultyAdvisors.map((advisor, idx) => (
-            <FacultyAdvisorCard key={advisor._id || idx} AdvisorData={advisor} />
-          ))}
+
+        {/* Row 1 — Bakthavatsalam (left) · Sivanesan (right) */}
+        <div className="adminGrid">
+          <FacultyAdvisorCard AdvisorData={facultyAdvisors[0]} />
           <FacilityAdminCard adminData={facilityAdmin} />
+        </div>
+
+        {/* Row 2 — Prince centered below */}
+        <div className="adminGrid__prince">
+          <div className="adminGrid__prince-card">
+            <FacultyAdvisorCard AdvisorData={facultyAdvisors[1]} />
+          </div>
         </div>
       </div>
 
       {/* ══ Student Team ══════════════════════════════════════════════════════ */}
-      <div className="relative max-w-6xl mx-auto px-4 pb-24">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
 
         <div className="text-center mb-8">
           <h2 className="text-3xl md:text-4xl font-black text-[#facc15]">SCIEnT Student Team</h2>
@@ -312,21 +346,22 @@ const SCIentMembers = () => {
           </div>
         </div>
 
-        {/* ── Department filter buttons ──────────────────────────────────────── */}
+        {/* ── Category selector buttons ──────────────────────────────────────── */}
         <div className="flex flex-wrap gap-3 justify-center mb-10">
-          {DEPARTMENTS.map(dept => {
-            const isActive = selectedDept === dept;
+          {CATEGORIES.map(cat => {
+            const isActive = selectedDept === cat.id;
             return (
               <button
-                key={dept}
-                onClick={() => handleDeptClick(dept)}
-                className={`px-6 py-2.5 rounded-full font-semibold text-sm md:text-base transition-all duration-300 border tabs ${
+                key={cat.id}
+                type="button"
+                onClick={() => handleDeptClick(cat.id)}
+                className={`px-6 py-2.5 rounded-full font-semibold text-sm md:text-base transition-all duration-300 border tabs cursor-pointer ${
                   isActive
-                    ? 'bg-[#facc15] text-black border-[#facc15] font-bold'
+                    ? 'bg-[#facc15] text-black border-[#facc15] font-bold shadow-lg shadow-[#facc15]/20'
                     : 'bg-zinc-900/80 text-zinc-300 border-zinc-700 hover:border-[#facc15]/60 hover:text-white'
                 }`}
               >
-                {dept}
+                {cat.label}
               </button>
             );
           })}
@@ -337,11 +372,11 @@ const SCIentMembers = () => {
 
           {/* ── COMPLETE TEAM VIEW (no dept selected) ──────────────────────── */}
           {showCompleteTeam && (() => {
-            const coreMembers    = getMembers(allMembers, selectedYear, 'Core', null);
+            const coreMembers = getCoreMembers(allMembers, selectedYear);
             const seniorManagers = getSeniorManagersAll(allMembers, selectedYear);
-            const managers       = getRoleAll(allMembers, selectedYear, 'Manager');
-            const deputies       = getRoleAll(allMembers, selectedYear, 'Deputy Manager');
-            const anyMembers     = coreMembers.length + seniorManagers.length + managers.length + deputies.length > 0;
+            const managers = getRoleAll(allMembers, selectedYear, 'Manager');
+            const deputies = getRoleAll(allMembers, selectedYear, 'Deputy Manager');
+            const anyMembers = coreMembers.length + seniorManagers.length + managers.length + deputies.length > 0;
 
             return anyMembers ? (
               <>
@@ -377,27 +412,36 @@ const SCIentMembers = () => {
                   <span className="text-[#facc15] font-semibold">{selectedYear}</span>.
                 </p>
                 <p className="text-zinc-600 text-xs mt-2">
-                  Use the Admin panel to add members.
+                  Use the Admin panel to add members for this academic year.
                 </p>
               </div>
             );
           })()}
 
-          {/* ── DEPARTMENT VIEW (specific dept selected) ────────────────────── */}
+          {/* ── DEPARTMENT VIEW (specific category selected) ───────────────── */}
           {!showCompleteTeam && (() => {
             if (selectedDept === 'Core') {
               // Core: flat grid
-              const members = getMembers(allMembers, selectedYear, 'Core', null);
+              const members = getCoreMembers(allMembers, selectedYear);
               return members.length > 0 ? (
-                <div className="membersGrid">
-                  {members.map((m, idx) => (
-                    <MemberCard key={m._id || idx} member={m} index={idx} />
-                  ))}
-                </div>
+                <section>
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="h-px flex-1 bg-[#facc15]/20" />
+                    <h3 className="text-xl md:text-2xl font-extrabold tracking-wide uppercase text-[#facc15]">
+                      Core
+                    </h3>
+                    <div className="h-px flex-1 bg-[#facc15]/20" />
+                  </div>
+                  <div className="membersGrid">
+                    {members.map((m, idx) => (
+                      <MemberCard key={m._id || idx} member={m} index={idx} />
+                    ))}
+                  </div>
+                </section>
               ) : (
                 <div className="text-center py-16 bg-zinc-950/60 border border-zinc-900 rounded-2xl p-8">
                   <p className="text-zinc-400 text-sm">
-                    No Core members for Team of{' '}
+                    No Core members found for Team of{' '}
                     <span className="text-[#facc15] font-semibold">{selectedYear}</span>.
                   </p>
                 </div>
@@ -420,16 +464,16 @@ const SCIentMembers = () => {
             }
 
             // Corporate Communications / DevOps / Creatives:
-            // Senior Managers (SM + PM roles), Managers, Deputy Managers
-            const seniors  = getSeniorManagersDept(allMembers, selectedYear, selectedDept);
+            // Senior Managers, Managers, Deputy Managers
+            const seniors = getSeniorManagersDept(allMembers, selectedYear, selectedDept);
             const managers = getRoleDept(allMembers, selectedYear, selectedDept, 'Manager');
             const deputies = getRoleDept(allMembers, selectedYear, selectedDept, 'Deputy Manager');
-            const anyMems  = seniors.length + managers.length + deputies.length > 0;
+            const anyMems = seniors.length + managers.length + deputies.length > 0;
 
             return anyMems ? (
               <>
                 <RoleSection title="Senior Managers" members={seniors} />
-                <RoleSection title="Managers"        members={managers} />
+                <RoleSection title="Managers" members={managers} />
                 <RoleSection title="Deputy Managers" members={deputies} />
               </>
             ) : (
