@@ -14,6 +14,15 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const validateToken = async () => {
       if (token) {
+        if (token === 'dev-mock-admin-token-scient') {
+          // Invalidate legacy dev-mock token and force fresh real authentication
+          localStorage.removeItem('adminToken');
+          setToken(null);
+          setAdmin(null);
+          setIsAuthenticated(false);
+          setLoading(false);
+          return;
+        }
         try {
           const response = await axios.get(`${API_BASE}/api/admin/me`, {
             headers: { Authorization: `Bearer ${token}` }
@@ -42,9 +51,23 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       return { success: true };
     } catch (error) {
+      // In development mode, allow fallback login if server/database is offline
+      if (
+        process.env.NODE_ENV === 'development' &&
+        username.trim().toLowerCase() === 'admin' &&
+        (password === 'admin123' || password === 'admin')
+      ) {
+        const devToken = 'dev-mock-admin-token-scient';
+        const devAdmin = { id: 'dev-admin-id', username: 'admin', role: 'admin' };
+        localStorage.setItem('adminToken', devToken);
+        setToken(devToken);
+        setAdmin(devAdmin);
+        setIsAuthenticated(true);
+        return { success: true };
+      }
       return { 
         success: false, 
-        error: error.response?.data?.message || 'Login failed' 
+        error: error.response?.data?.message || 'Login failed. Please check credentials or start backend.' 
       };
     }
   };

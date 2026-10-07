@@ -92,6 +92,7 @@ const App = () => {
         <Route path="/contrive" element={<Contrive/>}/>
         <Route path="/contriveForm" element={<ContrivePage/>}/>
         <Route path="/openhouse" element={<OpenhousePage/>}/>
+        <Route path="/team" element={<Team/>} />
         <Route path="/Team" element={<Team/>} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/faculty-connect" element={<FC_coming_soon />} />

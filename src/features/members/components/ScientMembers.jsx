@@ -1,429 +1,496 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Mail, Linkedin, Github, Zap, Sparkles, Rocket, Star, ChevronDown } from 'lucide-react';
+import { Rocket, ChevronDown, AlertTriangle } from 'lucide-react';
 import MemberCard from './MemberCard';
-import  AdminCard from './AdminCard.jsx';
 import FacultyAdvisorCard from './FacultyAdvisor.jsx';
 import FacilityAdminCard from './FacilityAdmin.jsx';
+import { MOCK_TEAM_MEMBERS, MOCK_PRINCE_ADVISOR } from '../data/mockTeamMembers';
 import '../styles/ScientMembers.css';
 
-const DEV_DUMMY_MEMBER = [
-  {
-    _id: "test-m-1",
-    name: "Alex Dev (Test Member)",
-    role: "Core",
-    subteam: "Cores",
-    Department: "Computer Science & Engg",
-    year: "4th Year",
-    photoUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80",
-    email: "alex.dev@nitt.edu",
-    linkedin: "https://linkedin.com",
-    instagram: "https://instagram.com",
-    description: "Development test member for testing card click, blur background, and detail panel interaction.",
-    cardColor: "#facc15"
-  }
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const SCIENT_YEARS = ['24-25', '25-26', '26-27'];
+
+const CATEGORIES = [
+  { id: 'Core', label: 'Core' },
+  { id: 'Corporate Communications', label: 'Corporate Communications (CC)' },
+  { id: 'DevOps', label: 'DevOps' },
+  { id: 'Creatives', label: 'Creatives' },
+  { id: 'Project Management', label: 'Project Management' },
 ];
 
-const SCIentMembers = () => {
-  const [activeSection, setActiveSection] = useState('team');
-  const [membersData, setMembersData] = useState({
-    team: [],
-    cores: [],
-    corporate: [],
-    devops: [],
-    creative: []
-  });
-  const [loading, setLoading] = useState(true);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const MODE = process.env.NODE_ENV || 'development';
-  const API_BASE = MODE==="development"? 'http://localhost:5000/api/team' : "/api/team"; // Adjust base URL as needed
+// ─── Static fallback Admin details ───────────────────────────────────────────
 
+const dummyBakthavatsalam = {
+  _id: 'advisor-baktha',
+  name: 'Dr. A. K. Bakthavatsalam',
+  role: 'Faculty Advisor',
+  Department: 'Energy & Environment Engineering',
+  photoUrl: '/Team/Dr_A_K_Bakthavatsalam.png',
+  email: 'baktha@nitt.edu',
+  description: 'Guiding research, innovation, and strategic initiatives at SCIEnT',
+  linkedin: 'https://www.linkedin.com/company/scientnitt/',
+  cardColor: '#facc15',
+};
+
+const dummySivanesan = {
+  _id: 'admin-sivanesan',
+  name: 'Mr. Sivanesan S',
+  role: 'Admin Executive',
+  Department: 'SCIEnT Facility Operations',
+  photoUrl: '/Team/Sivaneshan.jpg',
+  email: 'sivaneshan@nitt.edu',
+  description: 'Overseeing facility management and operational excellence at SCIEnT',
+  linkedin: 'https://www.linkedin.com/company/scientnitt/',
+  cardColor: '#facc15',
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Normalise subteam label (DB may store singular form or 'Cores')
+const normSubteam = s => {
+  if (!s) return '';
+  if (s === 'Corporate Communication') return 'Corporate Communications';
+  if (s === 'Cores') return 'Core';
+  return s;
+};
+
+// Is this member in the Core subteam?
+const isCoreMember = m =>
+  m.subteam === 'Core' ||
+  m.subteam === 'Cores' ||
+  m.role === 'Core' ||
+  (m.subteam === null && m.role?.endsWith('Executive') && m.role !== 'Admin Executive');
+
+// Filter Core members for a specific year
+const getCoreMembers = (all, year) =>
+  all
+    .filter(m => m.year === year && isCoreMember(m))
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+// Filter Senior Managers across all depts (includes Project Managers)
+const getSeniorManagersAll = (all, year) =>
+  all
+    .filter(m => {
+      if (m.year !== year) return false;
+      if (isCoreMember(m)) return false;
+      return m.role === 'Senior Manager' || m.role === 'Project Manager';
+    })
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+// Filter by role across all non-Core depts
+const getRoleAll = (all, year, role) =>
+  all
+    .filter(m => m.year === year && !isCoreMember(m) && m.role === role)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+// Filter Senior Managers for a specific department
+const getSeniorManagersDept = (all, year, dept) =>
+  all
+    .filter(m => {
+      if (m.year !== year) return false;
+      if (normSubteam(m.subteam) !== dept) return false;
+      return m.role === 'Senior Manager' || m.role === 'Project Manager';
+    })
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+// Filter by specific role in a specific department
+const getRoleDept = (all, year, dept, role) =>
+  all
+    .filter(m => m.year === year && normSubteam(m.subteam) === dept && m.role === role)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+// ─── RoleSection sub-component ───────────────────────────────────────────────
+
+const RoleSection = ({ title, members }) => {
+  if (!members || members.length === 0) return null;
+  return (
+    <section>
+      <div className="flex items-center gap-4 mb-8">
+        <div className="h-px flex-1 bg-[#facc15]/20" />
+        <h3 className="text-xl md:text-2xl font-extrabold tracking-wide uppercase text-[#facc15]">
+          {title}
+        </h3>
+        <div className="h-px flex-1 bg-[#facc15]/20" />
+      </div>
+      <div className="membersGrid">
+        {members.map((member, idx) => (
+          <MemberCard key={member._id || idx} member={member} index={idx} />
+        ))}
+      </div>
+    </section>
+  );
+};
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+
+const SCIentMembers = () => {
+  // 26-27 selected initially; no category selected initially
+  const [selectedYear, setSelectedYear] = useState('26-27');
+  const [selectedDept, setSelectedDept] = useState(null); // null = show complete team
+  const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
+  const yearDropdownRef = useRef(null);
+  const [allMembers, setAllMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (yearDropdownRef.current && !yearDropdownRef.current.contains(e.target)) {
+        setIsYearDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const API_BASE =
+    process.env.REACT_APP_API_URL ||
+    (process.env.NODE_ENV === 'development'
+      ? 'http://localhost:5000/api/team'
+      : '/api/team');
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchMembers = async () => {
       try {
         setLoading(true);
-        const [teamRes] = await Promise.all([
-          axios.get(`${API_BASE}/all`),
-        ]);
-
-        let fetchedMembers = teamRes.data.data || [];
-        const isDev = process.env.NODE_ENV !== 'production';
-        let allMembers = fetchedMembers;
-
-        if (isDev) {
-          allMembers = fetchedMembers.length > 0 ? [...fetchedMembers, ...DEV_DUMMY_MEMBER] : DEV_DUMMY_MEMBER;
+        setApiError(null);
+        let res;
+        try {
+          res = await axios.get(`${API_BASE}/all`, { timeout: 6000 });
+        } catch (firstErr) {
+          // If port 5000 or relative endpoint failed, try the alternate endpoint
+          const altEndpoint = API_BASE.includes('localhost:5000')
+            ? '/api/team/all'
+            : 'http://localhost:5000/api/team/all';
+          res = await axios.get(altEndpoint, { timeout: 6000 });
         }
-
-        setMembersData({
-          team: allMembers,
-          cores: allMembers.filter(m => m.role === 'Core' || m.subteam === 'Cores') || [],
-          excores: allMembers.filter(m => m.role === 'Ex-Core' || m.subteam === 'Ex-Cores') || [],
-          corporate: allMembers.filter(m => m.subteam === 'Corporate Communications') || [],
-          devops: allMembers.filter(m => m.subteam === 'DevOps') || [],
-          creative: allMembers.filter(m => m.subteam === 'Creatives') || [],
-          projectManagement: allMembers.filter(m => m.subteam === 'Project Management') || [],
-        });
+        const fetched = res.data.data || [];
+        if (fetched.length > 0) {
+          setAllMembers(fetched);
+          setApiError(null);
+        } else {
+          setAllMembers(MOCK_TEAM_MEMBERS);
+        }
       } catch (err) {
-        console.error('Error fetching members:', err);
-        const isDev = process.env.NODE_ENV !== 'production';
-        const allMembers = isDev ? DEV_DUMMY_MEMBER : [];
-        setMembersData({
-          team: allMembers,
-          cores: allMembers.filter(m => m.role === 'Core' || m.subteam === 'Cores') || [],
-          excores: allMembers.filter(m => m.role === 'Ex-Core' || m.subteam === 'Ex-Cores') || [],
-          corporate: allMembers.filter(m => m.subteam === 'Corporate Communications') || [],
-          devops: allMembers.filter(m => m.subteam === 'DevOps') || [],
-          creative: allMembers.filter(m => m.subteam === 'Creatives') || [],
-          projectManagement: allMembers.filter(m => m.subteam === 'Project Management') || [],
-        });
+        console.error('Failed to fetch team members from API:', err);
+        setApiError('Unable to reach server. Displaying cached member directory.');
+        setAllMembers(MOCK_TEAM_MEMBERS);
       } finally {
         setLoading(false);
       }
     };
-
     fetchMembers();
-  }, []);
+  }, [API_BASE]);
 
-  const renderTeamSections = () => {
-    const all = membersData.team || [];
-    const cores = all.filter(m => m.role === 'Core' || m.subteam === 'Cores');
-    const exCores = all.filter(m => m.role === 'Ex-Core' || m.subteam === 'Ex-Cores' || ['Technical Executive', 'Facility Executive', 'External Affairs Executive', 'Internal Affairs Executive', 'Project Operations Executive'].includes(m.role));
-    const seniorManagers = all.filter(m => ['Senior Manager', 'Senior Project Manager'].includes(m.role));
-    const managers = all.filter(m => ['Manager', 'Project Manager'].includes(m.role));
-    const deputyManagers = all.filter(m => m.role === 'Deputy Manager');
+  // ── Admin cards ────────────────────────────────────────────────────────────
+  const bakthaFromDb = allMembers.find(
+    m => m.role === 'Faculty Advisor' && m.name && m.name.includes('Bakthavatsalam')
+  );
+  const bakthaData = bakthaFromDb
+    ? { ...dummyBakthavatsalam, ...bakthaFromDb, photoUrl: bakthaFromDb.photoUrl || dummyBakthavatsalam.photoUrl }
+    : dummyBakthavatsalam;
 
-    return (
-      <div>
-        {cores.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Core Members</h2>
-            <div className="membersGrid">
-              {cores.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-        {exCores.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Ex-Core Members</h2>
-            <div className="membersGrid">
-              {exCores.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-        {seniorManagers.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Senior Managers</h2>
-            <div className="membersGrid">
-              {seniorManagers.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-        {managers.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Managers</h2>
-            <div className="membersGrid">
-              {managers.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-        {deputyManagers.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Deputy Managers</h2>
-            <div className="membersGrid">
-              {deputyManagers.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
+  const sivaFromDb = allMembers.find(
+    m => (m.role === 'Admin Executive' || (m.name && m.name.includes('Sivanesan')))
+  );
+  const facilityAdmin = sivaFromDb
+    ? { ...dummySivanesan, ...sivaFromDb, photoUrl: sivaFromDb.photoUrl || dummySivanesan.photoUrl }
+    : dummySivanesan;
+
+  const princeFromDb = allMembers.find(
+    m => m.role === 'Faculty Advisor' && m.name && m.name.includes('Prince')
+  );
+  const princeData = princeFromDb
+    ? { ...MOCK_PRINCE_ADVISOR, ...princeFromDb, photoUrl: princeFromDb.photoUrl || MOCK_PRINCE_ADVISOR.photoUrl }
+    : MOCK_PRINCE_ADVISOR;
+
+  const facultyAdvisors = [bakthaData, princeData];
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const handleYearClick = year => {
+    setSelectedYear(year);
   };
 
-  const renderCores = () => {
-    const all = membersData.team || [];
-    const cores = all.filter(m => m.role === 'Core' || m.subteam === 'Cores');
-    return (
-      <div>
-        <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Core</h2>
-        <div className="membersGrid">
-          {cores.map((member, idx) => (
-            <MemberCard key={member._id || idx} member={member} index={idx} />
-          ))}
-        </div>
-      </div>
-    );
+  const handleDeptClick = dept => {
+    // clicking the already-selected category deselects it (returns to complete team view)
+    setSelectedDept(prev => (prev === dept ? null : dept));
   };
 
-  const renderExCores = () => {
-    const all = membersData.team || [];
-    const exCores = all.filter(m => m.role === 'Ex-Core' || m.subteam === 'Ex-Cores' || ['Technical Executive', 'Facility Executive', 'External Affairs Executive', 'Internal Affairs Executive', 'Project Operations Executive'].includes(m.role));
-    return (
-      <div>
-        <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Ex-Core</h2>
-        <div className="membersGrid">
-          {exCores.map((member, idx) => (
-            <MemberCard key={member._id || idx} member={member} index={idx} />
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  const renderProjectManagementTeam = () => {
-    const all = membersData.team || [];
-    const head = all.filter(m => m.role === 'Project Management Head');
-    const seniorManagers = all.filter(m => m.role === 'Senior Project Manager' || (m.subteam === 'Project Management' && m.role === 'Senior Manager'));
-    const managers = all.filter(m => m.role === 'Project Manager' || (m.subteam === 'Project Management' && m.role === 'Manager'));
-
-    return (
-      <div>
-        {head.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Head</h2>
-            <div className="membersGrid">
-              {head.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-        {seniorManagers.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Senior Project Managers</h2>
-            <div className="membersGrid">
-              {seniorManagers.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-        {managers.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Project Managers</h2>
-            <div className="membersGrid">
-              {managers.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderSubteam = (key, subteamName) => {
-    const allMembers = membersData[key] || [];
-    const seniorManagers = allMembers.filter(m => m.role === 'Senior Manager');
-    const managers = allMembers.filter(m => m.role === 'Manager');
-    const deputyManagers = allMembers.filter(m => m.role === 'Deputy Manager');
-
-    return (
-      <div>
-        {seniorManagers.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Senior Managers</h2>
-            <div className="membersGrid">
-              {seniorManagers.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-        {managers.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Managers</h2>
-            <div className="membersGrid">
-              {managers.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-        {deputyManagers.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-4xl font-bold text-[#facc15] mb-4 flex justify-center">Deputy Managers</h2>
-            <div className="membersGrid">
-              {deputyManagers.map((member, idx) => (
-                <MemberCard key={member._id || idx} member={member} index={idx} />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
+  // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-[#facc15] text-xl">Loading team members...</div>
+        <div className="text-[#facc15] text-xl font-mono animate-pulse">Loading SCIEnT Team…</div>
       </div>
     );
   }
 
-  const filterOptions = [
-    { id: 'team', label: 'Team' },
-    { id: 'cores', label: 'Core' },
-    { id: 'excores', label: 'Ex-Core' },
-    { id: 'corporate', label: 'Corporate Communication' },
-    { id: 'devops', label: 'DevOps' },
-    { id: 'creative', label: 'Creative' },
-    { id: 'projectManagement', label: 'Project Management' }
-  ];
-
-  const currentFilter = filterOptions.find(opt => opt.id === activeSection);
-  const dummyAdmin = {
-    name: "Mr. Sivanesan S",
-    role: "Admin Executive",
-    Department: "SCIEnT Facility Operations",
-    photoUrl: "/Team/Sivaneshan.jpg",
-    email: "sivaneshan@nitt.edu",
-    description: "Overseeing facility management and operational excellence at SCIEnT",
-    linkedin: "https://www.linkedin.com/company/scientnitt/"
-  };
-  const dummyAdvisor = {
-    name: "Dr. A. K. Bakthavatsalam",
-    role: "Faculty Advisor",
-    Department: "Energy & Environment Engineering",
-    photoUrl: "/Team/Dr_A_K_Bakthavatsalam.png",
-    email: "baktha@nitt.edu",
-    description: "Guiding research, innovation, and strategic initiatives at SCIEnT",
-    linkedin: "https://www.linkedin.com/company/scientnitt/"
-  };
-    const FacultyAdvisor = membersData.team.find(m => m.role === 'Faculty Advisor') || dummyAdvisor;
-    const FacilityAdmin = membersData.team.find(m => m.role === 'Admin Executive') || dummyAdmin;
+  // ── Derived view state ─────────────────────────────────────────────────────
+  const showCompleteTeam = selectedDept === null;
 
   return (
-    <div className="min-h-screen bg-black">
-      {/* Animated Background */}
+    <div className="min-h-screen bg-black text-white">
+
+      {/* Ambient background glow */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute w-96 h-96 bg-[#facc15]/10 rounded-full blur-3xl -top-48 -left-48 animate-pulse"></div>
-        <div className="absolute w-96 h-96 bg-[#facc15]/10 rounded-full blur-3xl -bottom-48 -right-48 animate-pulse" style={{animationDelay: '1s'}}></div>
-        <div className="absolute w-96 h-96 bg-[#facc15]/10 rounded-full blur-3xl top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-pulse" style={{animationDelay: '2s'}}></div>
+        <div className="absolute w-96 h-96 bg-[#facc15]/10 rounded-full blur-3xl -top-48 -left-48 animate-pulse" />
+        <div
+          className="absolute w-96 h-96 bg-[#facc15]/10 rounded-full blur-3xl -bottom-48 -right-48 animate-pulse"
+          style={{ animationDelay: '1s' }}
+        />
       </div>
 
-      {/* Hero */}
-      <div className="relative pt-20 pb-16 px-4 text-center">
-        <div className="inline-block mb-4">
-          <Rocket className="w-16 h-16 text-[#facc15] animate-bounce" />
+      {/* ══ Hero ══════════════════════════════════════════════════════════════ */}
+      <div className="relative pt-20 pb-12 px-4 text-center">
+        <div className="inline-block mb-3">
+          <Rocket className="w-14 h-14 text-[#facc15] animate-bounce" />
         </div>
-        <h1 className="text-6xl laptop:text-7xl font-black mb-4 text-[#facc15]">
+        <h1 className="text-5xl md:text-7xl font-black mb-3 text-[#facc15] tracking-tight">
           THE SQUAD
         </h1>
-        <p className="text-xl text-[#facc15]/80 max-w-2xl mx-auto laptop:text-2xl">
-          Meet the awesome Team behind <span className="text-[#facc15] font-bold">SCIEnT</span>
+        <p className="text-lg md:text-xl text-[#facc15]/80 max-w-2xl mx-auto">
+          Meet the minds behind <span className="text-[#facc15] font-bold">SCIEnT</span>
         </p>
-        <p className="text-sm text-[#facc15]/60 mt-2 laptop:text-2xl">
+        <p className="text-xs md:text-sm text-[#facc15]/60 mt-1">
           Student Centre for Innovation in Engineering and Technology
         </p>
       </div>
-      <div className='AdminSection mb-16 px-4'>
-        <div className='flex justify-center text-center'>
-            <h1 className="text-4xl laptop:text-5xl font-black mb-6 text-[#facc15]">
-              SCIEnT Admin
-            </h1>
+
+      {/* API Error Banner if any */}
+      {apiError && (
+        <div className="max-w-2xl mx-auto mb-8 px-4">
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <span>{apiError} (Showing cached preview)</span>
+          </div>
         </div>
-        <div className='w-full max-w-6xl mx-auto grid grid-cols-1 laptop:grid-cols-2 gap-8'>
-            <FacultyAdvisorCard  AdvisorData={FacultyAdvisor}/>
-            <FacilityAdminCard  adminData={FacilityAdmin}/>
+      )}
+
+      {/* ══ SCIEnT Admin (always visible) ════════════════════════════════════ */}
+      <div className="AdminSection mb-16 px-4">
+        <div className="flex justify-center mb-6">
+          <h2 className="text-3xl md:text-4xl font-black text-[#facc15]">SCIEnT Admin</h2>
+        </div>
+
+        {/* Row 1 — Bakthavatsalam (left) · Sivanesan (right) */}
+        <div className="adminGrid">
+          <FacultyAdvisorCard AdvisorData={facultyAdvisors[0]} />
+          <FacilityAdminCard adminData={facilityAdmin} />
+        </div>
+
+        {/* Row 2 — Prince centered below */}
+        <div className="adminGrid__prince">
+          <div className="adminGrid__prince-card">
+            <FacultyAdvisorCard AdvisorData={facultyAdvisors[1]} />
+          </div>
         </div>
       </div>
-      <div className='mb-12'>
-        <h1 className="text-4xl laptop:text-5xl font-black mb-12 text-[#facc15] flex justify-center text-center">
-              SCIEnT Student Team
-        </h1>
-      </div>
-      {/* Filter Buttons / Custom Mobile Menu */}
-      <div className="relative px-4 mb-12">
-        {/* Buttons for laptop and desktop */}
-        <div className="hidden laptop:flex flex-wrap gap-3 justify-center mx-auto">
-          {filterOptions.map((filter) => (
+
+      {/* ══ Student Team ══════════════════════════════════════════════════════ */}
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
+
+        <div className="text-center mb-8">
+          <h2 className="text-3xl md:text-4xl font-black text-[#facc15]">SCIEnT Student Team</h2>
+        </div>
+
+        {/* ── Year dropdown menu ────────────────────────────────────────────── */}
+        <div className="flex justify-center mb-10 relative z-30">
+          <div className="relative inline-block text-left" ref={yearDropdownRef}>
             <button
-              key={filter.id}
-              onClick={() => setActiveSection(filter.id)}
-              className={`px-6 py-3 rounded-full font-bold text-xl transition-all duration-300 tabs ${
-                activeSection === filter.id
-                  ? 'bg-[#facc15] text-black scale-105 shadow-lg shadow-[#facc15]/25'
-                  : 'bg-black/80 text-[#facc15]/80 border-2 border-[#facc15]/50 hover:bg-[#facc15]/20 hover:scale-105 hover:border-[#facc15]/80'
-              }`}
+              type="button"
+              onClick={() => setIsYearDropdownOpen(prev => !prev)}
+              className="flex items-center gap-3 px-8 py-3.5 rounded-full font-bold text-lg md:text-xl transition-all duration-300 border-2 border-[#facc15] bg-[#facc15] text-black hover:bg-[#facc15]/90 active:scale-95 cursor-pointer shadow-lg shadow-[#facc15]/10"
+              aria-haspopup="true"
+              aria-expanded={isYearDropdownOpen}
             >
-              {filter.label}
+              <span>Team of {selectedYear}</span>
+              <ChevronDown
+                className={`w-5 h-5 transition-transform duration-300 ${
+                  isYearDropdownOpen ? 'rotate-180' : ''
+                }`}
+              />
             </button>
-          ))}
+
+            {isYearDropdownOpen && (
+              <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-56 bg-zinc-950 border-2 border-[#facc15]/60 rounded-2xl shadow-2xl shadow-black/80 py-2 z-50 backdrop-blur-xl overflow-hidden animate-in fade-in duration-150">
+                {SCIENT_YEARS.map(year => {
+                  const isSelected = selectedYear === year;
+                  return (
+                    <button
+                      key={year}
+                      type="button"
+                      onClick={() => {
+                        handleYearClick(year);
+                        setIsYearDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-5 py-3 font-semibold text-base transition-colors flex items-center justify-between cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#facc15] text-black font-bold'
+                          : 'text-zinc-200 hover:bg-[#facc15]/15 hover:text-[#facc15]'
+                      }`}
+                    >
+                      <span>Team of {year}</span>
+                      {isSelected && (
+                        <span className="text-xs font-black uppercase tracking-wider bg-black/20 px-2 py-0.5 rounded-full">
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Custom Mobile Filter Menu */}
-        <div className="laptop:hidden flex justify-center relative z-50">
-          {/* Trigger Button */}
-          <button
-            onClick={() => setShowMobileMenu(!showMobileMenu)}
-            className={`flex items-center gap-2 px-6 py-3 rounded-full font-bold text-lg border-2 border-[#facc15]/50 transition-all duration-300 shadow-md hover:shadow-lg hover:shadow-[#facc15]/20 w-full max-w-xs justify-center ${
-              showMobileMenu
-                ? 'bg-[#facc15]/20 text-[#facc15] scale-105'
-                : 'bg-black/80 text-[#facc15] hover:bg-[#facc15]/10 hover:border-[#facc15]/80'
-            }`}
-          >
-            {currentFilter?.label || 'Team'}
-            <ChevronDown className={`w-5 h-5 transition-transform duration-300 ${showMobileMenu ? 'rotate-180' : ''}`} />
-          </button>
-
-          {/* Overlay */}
-          {showMobileMenu && (
-            <div 
-              className="fixed inset-0 bg-black/50 z-40"
-              onClick={() => setShowMobileMenu(false)}
-            />
-          )}
-
-          {/* Dropdown Menu */}
-          {showMobileMenu && (
-            <div 
-              className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 w-full max-w-xs bg-black/95 border-2 border-[#facc15]/30 rounded-2xl shadow-xl shadow-[#facc15]/10 z-50 overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {filterOptions.map((filter) => (
-                <button
-                  key={filter.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveSection(filter.id);
-                    setShowMobileMenu(false);
-                  }}
-                  className={`w-full text-left px-6 py-4 font-bold text-lg transition-all duration-300 flex items-center gap-3 ${
-                    activeSection === filter.id
-                      ? 'bg-[#facc15]/20 text-[#facc15] border-l-4 border-[#facc15]'
-                      : 'text-[#facc15]/70 hover:bg-[#facc15]/10 hover:text-[#facc15]'
-                  }`}
-                >
-                  {filter.label}
-                  {activeSection === filter.id && (
-                    <div className="ml-auto w-2 h-2 bg-[#facc15] rounded-full animate-pulse"></div>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
+        {/* ── Category selector buttons ──────────────────────────────────────── */}
+        <div className="flex flex-wrap gap-3 justify-center mb-10">
+          {CATEGORIES.map(cat => {
+            const isActive = selectedDept === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => handleDeptClick(cat.id)}
+                className={`px-6 py-2.5 rounded-full font-semibold text-sm md:text-base transition-all duration-300 border tabs cursor-pointer ${
+                  isActive
+                    ? 'bg-[#facc15] text-black border-[#facc15] font-bold shadow-lg shadow-[#facc15]/20'
+                    : 'bg-zinc-900/80 text-zinc-300 border-zinc-700 hover:border-[#facc15]/60 hover:text-white'
+                }`}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
         </div>
-      </div>
 
-      {/* Members Sections */}
-      <div className="relative w-full max-w-7xl mx-auto px-4 mobile:px-8 laptop:px-12 pb-20">
-        {activeSection === 'team' && renderTeamSections()}
-        {activeSection === 'cores' && renderCores()}
-        {activeSection === 'excores' && renderExCores()}
-        {activeSection === 'projectManagement' && renderProjectManagementTeam()}
-        {activeSection === 'corporate' && renderSubteam('corporate', 'Corporate Communications')}
-        {activeSection === 'devops' && renderSubteam('devops', 'DevOps')}
-        {activeSection === 'creative' && renderSubteam('creative', 'Creatives')}
+        {/* ── Member sections ────────────────────────────────────────────────── */}
+        <div className="space-y-14">
+
+          {/* ── COMPLETE TEAM VIEW (no dept selected) ──────────────────────── */}
+          {showCompleteTeam && (() => {
+            const coreMembers = getCoreMembers(allMembers, selectedYear);
+            const seniorManagers = getSeniorManagersAll(allMembers, selectedYear);
+            const managers = getRoleAll(allMembers, selectedYear, 'Manager');
+            const deputies = getRoleAll(allMembers, selectedYear, 'Deputy Manager');
+            const anyMembers = coreMembers.length + seniorManagers.length + managers.length + deputies.length > 0;
+
+            return anyMembers ? (
+              <>
+                {/* Core — flat grid */}
+                {coreMembers.length > 0 && (
+                  <section>
+                    <div className="flex items-center gap-4 mb-8">
+                      <div className="h-px flex-1 bg-[#facc15]/20" />
+                      <h3 className="text-xl md:text-2xl font-extrabold tracking-wide uppercase text-[#facc15]">
+                        Core
+                      </h3>
+                      <div className="h-px flex-1 bg-[#facc15]/20" />
+                    </div>
+                    <div className="membersGrid">
+                      {coreMembers.map((m, idx) => (
+                        <MemberCard key={m._id || idx} member={m} index={idx} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Senior Managers (includes Project Managers) */}
+                <RoleSection title="Senior Managers" members={seniorManagers} />
+                {/* Managers */}
+                <RoleSection title="Managers" members={managers} />
+                {/* Deputy Managers */}
+                <RoleSection title="Deputy Managers" members={deputies} />
+              </>
+            ) : (
+              <div className="text-center py-16 bg-zinc-950/60 border border-zinc-900 rounded-2xl p-8">
+                <p className="text-zinc-400 text-sm">
+                  No members added yet for Team of{' '}
+                  <span className="text-[#facc15] font-semibold">{selectedYear}</span>.
+                </p>
+                <p className="text-zinc-600 text-xs mt-2">
+                  Use the Admin panel to add members for this academic year.
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* ── DEPARTMENT VIEW (specific category selected) ───────────────── */}
+          {!showCompleteTeam && (() => {
+            if (selectedDept === 'Core') {
+              // Core: flat grid
+              const members = getCoreMembers(allMembers, selectedYear);
+              return members.length > 0 ? (
+                <section>
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="h-px flex-1 bg-[#facc15]/20" />
+                    <h3 className="text-xl md:text-2xl font-extrabold tracking-wide uppercase text-[#facc15]">
+                      Core
+                    </h3>
+                    <div className="h-px flex-1 bg-[#facc15]/20" />
+                  </div>
+                  <div className="membersGrid">
+                    {members.map((m, idx) => (
+                      <MemberCard key={m._id || idx} member={m} index={idx} />
+                    ))}
+                  </div>
+                </section>
+              ) : (
+                <div className="text-center py-16 bg-zinc-950/60 border border-zinc-900 rounded-2xl p-8">
+                  <p className="text-zinc-400 text-sm">
+                    No Core members found for Team of{' '}
+                    <span className="text-[#facc15] font-semibold">{selectedYear}</span>.
+                  </p>
+                </div>
+              );
+            }
+
+            if (selectedDept === 'Project Management') {
+              // Project Management: Senior Managers ONLY
+              const seniors = getSeniorManagersDept(allMembers, selectedYear, 'Project Management');
+              return seniors.length > 0 ? (
+                <RoleSection title="Senior Managers" members={seniors} />
+              ) : (
+                <div className="text-center py-16 bg-zinc-950/60 border border-zinc-900 rounded-2xl p-8">
+                  <p className="text-zinc-400 text-sm">
+                    No Project Management members for Team of{' '}
+                    <span className="text-[#facc15] font-semibold">{selectedYear}</span>.
+                  </p>
+                </div>
+              );
+            }
+
+            // Corporate Communications / DevOps / Creatives:
+            // Senior Managers, Managers, Deputy Managers
+            const seniors = getSeniorManagersDept(allMembers, selectedYear, selectedDept);
+            const managers = getRoleDept(allMembers, selectedYear, selectedDept, 'Manager');
+            const deputies = getRoleDept(allMembers, selectedYear, selectedDept, 'Deputy Manager');
+            const anyMems = seniors.length + managers.length + deputies.length > 0;
+
+            return anyMems ? (
+              <>
+                <RoleSection title="Senior Managers" members={seniors} />
+                <RoleSection title="Managers" members={managers} />
+                <RoleSection title="Deputy Managers" members={deputies} />
+              </>
+            ) : (
+              <div className="text-center py-16 bg-zinc-950/60 border border-zinc-900 rounded-2xl p-8">
+                <p className="text-zinc-400 text-sm">
+                  No members for{' '}
+                  <span className="text-[#facc15] font-semibold">{selectedDept}</span>{' '}
+                  in Team of {selectedYear}.
+                </p>
+                <p className="text-zinc-600 text-xs mt-2">
+                  Use the Admin panel to add members to this department.
+                </p>
+              </div>
+            );
+          })()}
+
+        </div>
       </div>
     </div>
   );
