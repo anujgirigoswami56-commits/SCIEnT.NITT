@@ -203,7 +203,7 @@ router.get('/settings', protect, async (req, res) => {
 router.put('/settings', protect, async (req, res) => {
   try {
     const { timelineDefaultView, gridScanLinesColor, gridScanColor } = req.body;
-    
+
     const updates = [];
     if (timelineDefaultView !== undefined) {
       updates.push(Settings.findOneAndUpdate(

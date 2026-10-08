@@ -23,27 +23,28 @@
   justify-items: center;
   grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 2.5rem 2rem;
+  width: 100%;
 }
-.tabs{
-  width: 14rem;
+.tabs {
+  width: auto;
 }
 
 /* Tablets */
 @media (min-width: 768px) {
   .membersGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) ;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-/* Laptops / small desktops */
+/* Laptops / desktops */
 @media (min-width: 1024px) {
   .membersGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)); /* Increased to 3 columns earlier for better desktop utilization */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .tabs{
+  .tabs {
     width: auto;
   }
-  .Admins{
+  .Admins {
     box-sizing: border-box;
     display: flex;
     padding: auto auto;
@@ -54,6 +55,41 @@
 /* Larger screens */
 @media (min-width: 1280px) {
   .membersGrid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)); /* Further increase for very large screens */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+/* ── SCIEnT Admin section layout ─────────────────────────────────────────── */
+
+/* Mobile: single-column stack */
+.adminGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+/* Row 2: Prince card — centred, full width on mobile */
+.adminGrid__prince {
+  display: flex;
+  justify-content: center;
+  max-width: 64rem;
+  margin: 1.5rem auto 0;
+}
+
+/* Wrapper that controls Prince card width */
+.adminGrid__prince-card {
+  width: 100%;
+}
+
+/* Tablet+: 2-col row 1, Prince at single-column width */
+@media (min-width: 768px) {
+  .adminGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+  /* Match one column: 50% of container minus half the gap (1.5rem / 2) */
+  .adminGrid__prince-card {
+    width: calc(50% - 0.75rem);
+  }
+}
