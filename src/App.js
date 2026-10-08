@@ -5,6 +5,7 @@ import Home from "./pages/Home";
 import Timeline from "./pages/Timeline";
 import TimelineYear from "./pages/TimelineYear";
 import Gallery from "./pages/Gallery";
+import Reports from "./pages/Reports";
 import ProjectSection from "./pages/ProjectSection";
 import Contact from "./pages/Contacts";
 
@@ -85,6 +86,7 @@ const App = () => {
         <Route path="/timeline" element={<Timeline />} />
         <Route path="/timeline/:year" element={<TimelineYear />} />
         <Route path="/gallery" element={<Gallery />} />
+        <Route path="/reports" element={<Reports />} />
         <Route path="/project" element={<ProjectSection />} />
         <Route path="/inventive" element={<Inventive />} />
         <Route path="/inventiveForm" element={<InventivePage/>} />
@@ -92,6 +94,7 @@ const App = () => {
         <Route path="/contrive" element={<Contrive/>}/>
         <Route path="/contriveForm" element={<ContrivePage/>}/>
         <Route path="/openhouse" element={<OpenhousePage/>}/>
+        <Route path="/team" element={<Team/>} />
         <Route path="/Team" element={<Team/>} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/faculty-connect" element={<FC_coming_soon />} />

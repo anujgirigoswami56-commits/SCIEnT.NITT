@@ -5,6 +5,7 @@ import '../styles/MembersCard.css';
 
 const MemberCard = ({ member, index }) => {
     const [showDetails, setShowDetails] = useState(false);
+    const [imgError, setImgError] = useState(false);
 
     // Fallback preset colors if cardColor is not defined
     const presetColors = ['#facc15', '#a78bfa', '#38bdf8', '#f472b6', '#34d399', '#fb923c'];
@@ -42,7 +43,7 @@ const MemberCard = ({ member, index }) => {
 
                 {/* Photo / Background Layer */}
                 <div className="absolute inset-0 w-full h-full overflow-hidden rounded-3xl z-0">
-                    {member.photoUrl ? (
+                    {member.photoUrl && !imgError ? (
                         <img 
                             src={member.photoUrl} 
                             alt={member.name} 
@@ -51,7 +52,7 @@ const MemberCard = ({ member, index }) => {
                                     ? 'scale-108 filter blur-md brightness-[0.50]' 
                                     : 'scale-100 filter blur-0 brightness-95 group-hover:scale-105'
                             }`}
-                            onError={(e) => { e.target.style.display = 'none'; }}
+                            onError={() => setImgError(true)}
                         />
                     ) : (
                         <div 

@@ -4,17 +4,19 @@ const Admin = require('../models/Admin');
 
 exports.protect = async (req, res, next) => {
   const token = req.header('Authorization')?.split(' ')[1];
-  if (!token) return res.status(401).send('Access denied.');
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Access denied. No token provided.' });
+  }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.admin = await Admin.findById(decoded.id);
     if (!req.admin) {
-      return res.status(401).send('Invalid token.');
+      return res.status(401).json({ success: false, message: 'Invalid token. Admin account not found.' });
     }
     next();
   } catch (err) {
-    res.status(400).send('Invalid token.');
+    return res.status(401).json({ success: false, message: 'Invalid or expired session token. Please log in again.' });
   }
 };
 
@@ -22,6 +24,6 @@ exports.adminOnly = (req, res, next) => {
   if (req.admin && req.admin.role === 'admin') {
     next();
   } else {
-    res.status(403).send('Access denied. Admin only.');
+    return res.status(403).json({ success: false, message: 'Access denied. Admin privileges required.' });
   }
 };

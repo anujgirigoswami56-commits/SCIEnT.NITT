@@ -122,8 +122,12 @@ const Navbar = () => {
                                 Team
                             </Link>
                             <Link to="/gallery" onClick={closeAll}
-                                className="block px-4 py-2 text-white hover:bg-gray-700 hover:text-[#f9c203] rounded-b-lg no-underline">
+                                className="block px-4 py-2 text-white hover:bg-gray-700 hover:text-[#f9c203] no-underline">
                                 Gallery
+                            </Link>
+                            <Link to="/reports" onClick={closeAll}
+                                className="block px-4 py-2 text-white hover:bg-gray-700 hover:text-[#f9c203] rounded-b-lg no-underline">
+                                Reports
                             </Link>
                         </div>
                     )}
